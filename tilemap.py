@@ -15,34 +15,43 @@ class Tilemap:
         image_files = os.listdir("Images/Tiles")
         counter = 0
         for image_file_name in image_files:
+            has_collision : bool = False
             name = image_file_name.replace(".png", "")
             image_file = pygame.image.load("Images/Tiles/" + image_file_name).convert_alpha()
-            tile_type = Tilemap.Tile(image_file, name, tile_size, 0, False)
+            if image_file.get_height() // 4 != tile_size:
+                has_collision = True
+            tile_type = Tilemap.Tile(image_file, name, has_collision)
             Tilemap.tile_types[counter] = tile_type
             counter += 1
 
-    def slice_tile_texture(source : Surface, tile_width : int, tile_height : int):
+    def slice_tile_texture(source : Surface):
         variations : List[Surface] = []
-        tile_counts = [source.get_size()[0] // tile_width, source.get_size()[1] // tile_height]
-        for y in range(tile_counts[1]):
-            for x in range(tile_counts[0]):
-                variation = Surface((tile_width, tile_height), pygame.SRCALPHA).convert_alpha()
-                variation.blit(source, (0, 0), Rect(x * tile_width, y * tile_height, tile_width, tile_height)) 
+        tile_size = [source.width // 4, source.height // 4]
+        for y in range(4):
+            for x in range(4):
+                variation = Surface((tile_size[0], tile_size[1]), pygame.SRCALPHA).convert_alpha()
+                variation.blit(source, (0, 0), Rect(x * tile_size[0], y * tile_size[1], tile_size[0], tile_size[1])) 
                 variations.append(variation)
         return variations
     
     class Chunk:
-        def __init__(self, width : int, height : int, tile_size : int):
-            self.surface : Surface = Surface((width * tile_size, height * tile_size), pygame.SRCALPHA).convert_alpha()
+        def __init__(self, width : int, height : int, tile_width : int, tile_height : int):
+            self.surface : Surface = Surface((width * tile_width, height * tile_height), pygame.SRCALPHA).convert_alpha()
             self.width = width
             self.height = height
             self.is_empty : bool = True
         
     class Tile:
-        def __init__(self, source_img : Surface, name : str, tile_size : int, height : int, has_collision : bool):
-            self.variations : List[Surface] = Tilemap.slice_tile_texture(source_img, tile_size, tile_size + height)
+        def __init__(self, source_img : Surface, name : str, has_collision : bool):
+            self.variations : List[Surface] = Tilemap.slice_tile_texture(source_img)
             self.has_collision = has_collision
             self.name = name
+        
+        def __str__(self):
+            collision_str : str = ", a floor tile."
+            if self.has_collision:
+                collision_str = ", a wall tile."
+            return self.name + collision_str
 
     tile_types : Dict[int, Tile] = {}
 
@@ -82,21 +91,50 @@ class Tilemap:
         '''Sets the tile at the given tile position to the new tile type indicated by id, use -1 to remove tiles.'''
         #Set the tile
         self.tiles[tile_pos] = id
+        tile_type = Tilemap.tile_types[id]
+
+        chunks : Set[Vector2] = set()
+
+        #Floor tiles (chunks are chunk_size by chunk_size tiles)
+        chunks = {Vector2((tile_pos.x - 1)// self.chunk_size, tile_pos.y - 1), 
+                  Vector2(tile_pos.x // self.chunk_size, tile_pos.y - 1),
+                  Vector2((tile_pos.x + 1)// self.chunk_size, tile_pos.y - 1),
+                  Vector2((tile_pos.x - 1)// self.chunk_size, tile_pos.y), 
+                  Vector2(tile_pos.x // self.chunk_size, tile_pos.y),
+                  Vector2((tile_pos.x + 1)// self.chunk_size, tile_pos.y),
+                  Vector2((tile_pos.x - 1)// self.chunk_size, tile_pos.y + 1), 
+                  Vector2(tile_pos.x // self.chunk_size, tile_pos.y + 1),
+                  Vector2((tile_pos.x + 1)// self.chunk_size, tile_pos.y + 1)}
 
         #Update all adjacent chunk images the tile belongs to
-        chunks : Set[Vector2] = {
-            Vector2(tile_pos.x // self.chunk_size, tile_pos.y // self.chunk_size),
-            Vector2((tile_pos.x - 1)// self.chunk_size, tile_pos.y // self.chunk_size),
-            Vector2(tile_pos.x // self.chunk_size, (tile_pos.y - 1) // self.chunk_size),
-            Vector2((tile_pos.x - 1)// self.chunk_size, (tile_pos.y - 1) // self.chunk_size)
-        }
-        
+        #Wall chunks
+        for chunk_pos in chunks:
+            if chunk_pos not in self.wall_chunks:
+                if id == -1:
+                    continue #We were removing a tile that was in an ungenerated chunk. No action needed.
+                if chunk_pos != Vector2(tile_pos.x // self.chunk_size, tile_pos.y):
+                    continue #The chunk doesn't need to be updated
+                #Otherwise, generate a new chunk
+                self.wall_chunks[chunk_pos] = Tilemap.Chunk(self.chunk_size, 1, self.tile_size, tile_type.variations[0].get_height())
+            #Update the chunks' images
+            self.update_wall_chunk(chunk_pos, self.wall_chunks[chunk_pos])
+
+            #Check to see if the chunk still has any tiles in it, if not, remove it
+            if self.wall_chunks[chunk_pos].is_empty:
+                self.wall_chunks.pop(chunk_pos)
+
+        chunks = {Vector2(tile_pos.x // self.chunk_size, tile_pos.y // self.chunk_size), 
+                  Vector2((tile_pos.x - 1)// self.chunk_size, tile_pos.y // self.chunk_size),
+                  Vector2(tile_pos.x // self.chunk_size, (tile_pos.y - 1) // self.chunk_size),
+                  Vector2((tile_pos.x - 1)// self.chunk_size, (tile_pos.y - 1) // self.chunk_size)}
+
+        #Floor tiles
         for chunk_pos in chunks:
             if chunk_pos not in self.floor_chunks:
                 if id == -1:
-                    return #We were removing a tile that was in an ungenerated chunk. No action needed.
+                    continue #We were removing a tile that was in an ungenerated chunk. No action needed.
                 #Otherwise, generate a new chunk
-                self.floor_chunks[chunk_pos] = Tilemap.Chunk(self.chunk_size, self.chunk_size, self.tile_size)
+                self.floor_chunks[chunk_pos] = Tilemap.Chunk(self.chunk_size, self.chunk_size, self.tile_size, self.tile_size)
             #Update the chunks' images
             self.update_chunk(chunk_pos, self.floor_chunks[chunk_pos])
 
@@ -104,12 +142,91 @@ class Tilemap:
             if self.floor_chunks[chunk_pos].is_empty:
                 self.floor_chunks.pop(chunk_pos)
 
-    def update_chunk(self, chunk_pos : Vector2, chunk : Chunk):
-        chunk.surface.fill((0, 0, 0, 0))
+    def update_wall_chunk(self, chunk_pos : Vector2, chunk : Chunk):
+        #Find the correct size for the chunk
+        max_height = chunk.surface.get_height()
+        for vert_y in range(chunk_pos.y * chunk.height, (chunk_pos.y + 1) * chunk.height):
+            for vert_x in range(chunk_pos.x * chunk.width - 1, (chunk_pos.x + 1) * chunk.width + 1):
+                tile_type = self.get_tile_type(Vector2(vert_x, vert_y))
+                if tile_type == None:
+                    continue
+                height = tile_type.variations[0].get_height()
+                if height > max_height:
+                    max_height = height
+        chunk.surface = Surface((chunk.surface.get_width(), max_height), pygame.SRCALPHA).convert_alpha()
+        #chunk.surface.fill((255 * (1 - chunk_pos.y % 2), 0, 255 * (chunk_pos.y % 2), 100))
+
+        chunk.is_empty = True
+        
+        for x in range(chunk.width):
+            tile_type = self.get_tile(Vector2(chunk_pos.x * self.chunk_size + x, chunk_pos.y))
+            if tile_type == -1:
+                continue
+            tile_surface : Surface = Surface(Tilemap.tile_types[tile_type].variations[0].get_size(), pygame.SRCALPHA).convert_alpha()
+            surf_altered = False
+            #For each vertex of chunk
+            for vert_y in range(2):
+                for vert_x in range(2):
+                    tile_bitmap : int = 0x0
+                    #Build the tile image based on the neighboring tiles
+                    #Topleft Tile
+                    tile_pos = Vector2(chunk_pos.x * chunk.width, chunk_pos.y * chunk.height) + Vector2(vert_x + x - 1, vert_y - 1)
+                    tile = self.get_tile(tile_pos)
+                    if tile == tile_type:
+                        tile_bitmap |= 0x1
+
+                    #Topright Tile
+                    tile_pos = Vector2(chunk_pos.x * chunk.width, chunk_pos.y * chunk.height) + Vector2(vert_x + x, vert_y - 1)
+                    tile = self.get_tile(tile_pos)
+                    if tile == tile_type:
+                        tile_bitmap |= 0x2
+
+                    #Bottomleft Tile
+                    tile_pos = Vector2(chunk_pos.x * chunk.width, chunk_pos.y * chunk.height) + Vector2(vert_x + x - 1, vert_y)
+                    tile = self.get_tile(tile_pos)
+                    if tile == tile_type:
+                        tile_bitmap |= 0x4
+                    
+                    #Bottomright Tile
+                    tile_pos = Vector2(chunk_pos.x * chunk.width, chunk_pos.y * chunk.height) + Vector2(vert_x + x, vert_y)
+                    tile = self.get_tile(tile_pos)
+                    if tile == tile_type:
+                        tile_bitmap |= 0x8
+
+                    if tile_bitmap == 0:
+                        continue
+                    surf_altered = surf_altered or True
+                    tile_texture = Tilemap.tile_types[tile_type].variations[Tilemap.TILE_BITMAPS[tile_bitmap]]
+                    tile_surface.blit(tile_texture, ((vert_x - 0.5) * self.tile_size, (vert_y - 0.5) * self.tile_size))
+            if surf_altered:
+                chunk.is_empty = chunk.is_empty and False
+                chunk.surface.blit(tile_surface, (x * self.tile_size, chunk.surface.get_height() - tile_texture.get_height()))
+
+    def update_chunk(self, chunk_pos : Vector2, chunk : Chunk, is_wall = False):
+        #Determine the new height of the chunk
+        if is_wall:
+            max_height = chunk.surface.get_height()
+            for y in range(chunk_pos.y * chunk.height, (chunk_pos.y + 1) * chunk.height):
+                for x in range(chunk_pos.x * chunk.width - 1, (chunk_pos.x + 1) * chunk.width + 1):
+                    tile_type = self.get_tile_type(Vector2(x, y))
+                    if tile_type == None:
+                        continue
+                    height = tile_type.variations[0].get_height()
+                    if height > max_height:
+                        max_height = height
+            chunk.surface = Surface((chunk.surface.get_width(), max_height), pygame.SRCALPHA).convert_alpha()
+            chunk.surface.fill((255 * (1 - chunk_pos.y % 2), 0, 255 * (chunk_pos.y % 2), 100))
+        else:
+            chunk.surface.fill((0, 0, 0, 0))
+        
         chunk.is_empty = True
         for tile_type in range(len(Tilemap.tile_types)):
-            for y in range(chunk.width):
-                for x in range(chunk.height):
+            if (is_wall and not Tilemap.tile_types[tile_type].has_collision or 
+                not is_wall and Tilemap.tile_types[tile_type].has_collision):
+                continue
+
+            for y in range(chunk.height):
+                for x in range(chunk.width):
                     tile_bitmap : int = 0x0
                     #Topleft Tile
                     tile_pos = Vector2(chunk_pos.x * chunk.width, chunk_pos.y * chunk.height) + Vector2(x, y)
@@ -139,7 +256,10 @@ class Tilemap:
                         continue
                     chunk.is_empty = chunk.is_empty and False
                     tile_surface = Tilemap.tile_types[tile_type].variations[Tilemap.TILE_BITMAPS[tile_bitmap]]
-                    chunk.surface.blit(tile_surface, (x * self.tile_size, y * self.tile_size))
+                    if is_wall:
+                        chunk.surface.blit(tile_surface, (x * self.tile_size, y * self.tile_size + chunk.surface.get_height() - tile_surface.get_height()))
+                    else:
+                        chunk.surface.blit(tile_surface, (x * self.tile_size, y * self.tile_size))
 
     def draw(self, dest : Surface):
         for x in range(-1, 4):
@@ -151,4 +271,15 @@ class Tilemap:
                     continue
                 dest.blit(self.floor_chunks[chunk_pos].surface, self.tile_to_world(tile_pos + Vector2(0.5, 0.5)).to_tuple())
 
-                #TODO: Draw the walls
+        for x in range(-1, 4):
+            for y in range(-1, 4):
+                tile_pos = Vector2(x * self.chunk_size, y * self.chunk_size)
+                chunk_pos = Vector2(x, y)
+                #Draw the walls
+                for row in range(0, self.chunk_size):
+                    if Vector2(chunk_pos.x, tile_pos.y + row) not in self.wall_chunks:
+                        continue
+                    chunk_surface = self.wall_chunks[Vector2(chunk_pos.x, tile_pos.y + row)].surface
+                    draw_position = self.tile_to_world(tile_pos + Vector2(0, row))
+                    draw_position.y -= (chunk_surface.get_height() - self.tile_size)
+                    dest.blit(chunk_surface, draw_position.to_tuple())
