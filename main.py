@@ -2,6 +2,8 @@ import pygame, time
 from tilemap import Tilemap
 from entity import Collider, RectCollider, CircleCollider, Entity
 from vector import Vector2
+from sprite import Sprite
+from camera import Camera
 
 pygame.init()
 
@@ -18,9 +20,11 @@ class Main:
         self.delta : float
 
         self.collider : CircleCollider = Collider.add(CircleCollider(100, 100, 50, True, False))
-        self.collider2 : CircleCollider = Collider.add(CircleCollider(100, 50, 50, True, False, pygame.Color(0, 0, 255)))
-        self.entity : Entity = Entity(0, 0, RectCollider(50, 50, 8, 10, True, False, pygame.Color(200, 0, 200)))
+        self.collider2 : CircleCollider = Collider.add(CircleCollider(100, 50, 50, True, False, pygame.Color(0, 0, 255, 200)))
+        self.entity : Entity = Entity(50, 50, CircleCollider(16, 32, 10, True, False, pygame.Color(200, 0, 200, 200)))
+        self.sprite : Sprite = Sprite(0, 0, 32, pygame.image.load("Images/KarenTieflingStill.png"))
         self.tilemap : Tilemap = Tilemap()
+        self.camera : Camera = Camera(0, 0)
         for x in range(10):
             for y in range(10):
                 self.tilemap.set_tile(Vector2(x, y), 1)
@@ -69,17 +73,22 @@ class Main:
 
         self.entity.velocity = self.movement * 10 * 16
         self.entity.move_and_collide(self.delta, self.tilemap)
+        self.sprite.position = self.entity.position
+        self.camera.set_position(self.entity.position - (Vector2.from_tuple(self.screen.get_size()) * 0.5) + Vector2(16, 16))
 
         if (self.mouse_down):
-            pass
-            #self.tilemap.set_tile(self.tilemap.world_to_tile(Vector2.from_tuple(pygame.mouse.get_pos())), 3)
+            world_pos = self.camera.screen_to_world(Vector2.from_tuple(pygame.mouse.get_pos()))
+            self.tilemap.set_tile(self.tilemap.world_to_tile(world_pos), 3)
 
         # Draw graphics
         self.screen.fill((0, 255, 0))
-        self.tilemap.draw(self.screen)
-        self.collider.draw(self.screen)
-        self.collider2.draw(self.screen)
-        self.entity.collider.draw(self.screen)
+        self.tilemap.draw(self.camera)
+        self.collider.draw(self.camera)
+        self.collider2.draw(self.camera)
+        self.sprite.draw(self.camera)
+        self.entity.collider.draw(self.camera)
+        
+        self.camera.draw(self.screen)
 
         # flip() the display to put your work on screen
         pygame.display.flip()

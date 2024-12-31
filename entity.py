@@ -1,7 +1,8 @@
-from pygame import Surface, Color, draw
+from pygame import Surface, Color, draw, SRCALPHA
 from vector import Vector2
 from typing import List, Dict, Set
 from tilemap import Tilemap
+from camera import Camera
 import math
 
 class Collider:
@@ -35,7 +36,7 @@ class Collider:
         if self in Collider.colliders:
             Collider.colliders.remove(self)
 
-    def draw(self, surface : Surface):
+    def draw(self, camera : Camera):
         pass
 
     def collide_point(self, point : Vector2):
@@ -100,14 +101,20 @@ class RectCollider (Collider):
         super().__init__(x, y, is_visible, is_area, color)
         self.size = Vector2(width, height)
     
-    def draw(self, surface : Surface):
+    def draw(self, camera : Camera):
+        if not self.is_visible:
+            return
+        
+        #Generate the surface
+        surface = Surface((self.size.x, self.size.y), SRCALPHA).convert_alpha()
         color = self.color.grayscale()
         if self.is_colliding:
             color = self.color
         self.is_colliding = False
+        surface.fill(color)
 
-        if self.is_visible:
-            draw.rect(surface, color, (self.position.x, self.position.y, self.size.x, self.size.y))
+        #Add that to the overlay queue
+        camera.add_to_overlay(surface, self.position.x, self.position.y)
 
     def collide_point(self, point : Vector2) -> bool:
         colliding_x = False
@@ -190,13 +197,19 @@ class CircleCollider (Collider):
         super().__init__(x, y, is_visible, is_area, color)
         self.size = diameter / 2
     
-    def draw(self, surface : Surface):
+    def draw(self, camera : Camera):
+        if not self.is_visible:
+            return
+        #Generate the surface
+        surface = Surface((self.size * 2, self.size * 2), SRCALPHA).convert_alpha()
         color = self.color.grayscale()
         if self.is_colliding:
             color = self.color
         self.is_colliding = False
-        if self.is_visible:
-              draw.circle(surface, color, (self.position.x, self.position.y), self.size)
+        draw.circle(surface, color, (self.size, self.size), self.size)
+
+        #Add surface to overlay queue
+        camera.add_to_overlay(surface, self.position.x - self.size, self.position.y - self.size)
 
     def collide_point(self, point : Vector2) -> bool:
         self.is_colliding = False
@@ -262,6 +275,7 @@ class Entity:
     def __init__(self, x : float, y : float, collider : Collider):
         self.position : Vector2 = Vector2(x, y)
         self.collider : Collider = Collider.add(collider)
+        self.collider.position += self.position
         self.velocity : Vector2 = Vector2(x, y)
         self.accel : Vector2 = Vector2(x, y)
     
@@ -275,7 +289,7 @@ class Entity:
         #Handle horizontal collisions:
         self.position.x += self.velocity.x * delta #Update position x
         self.collider.position.x += self.velocity.x * delta #Update collider position x
-        collider_offset = self.position.x - self.collider.position.x
+        collider_offset = self.collider.position.x - self.position.x
 
         collisions : List[Collider] = []
         if self.velocity.x != 0:
@@ -288,11 +302,11 @@ class Entity:
                 #Resolve the rect-rect collision
                 if (self.velocity.x > 0): #Set the right side of this collider to collider's left side
                     self.collider.position.x = collider.position.x - self.collider.size.x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
                 elif (self.velocity.x < 0): #Set the left side of this collider to collider's right side
                     self.collider.position.x = collider.position.x + collider.size.x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
             elif isinstance(self.collider, RectCollider) and isinstance(collider, CircleCollider):
                 #Resolve the rect-circle collision
@@ -311,12 +325,12 @@ class Entity:
                 if (self.velocity.x > 0): #Set the right side of this collider to collider's left side
                     target_x = collider.position.x - delta_x
                     self.collider.position.x = target_x - self.collider.size.x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
                 elif (self.velocity.x < 0): #Set the left side of this collider to collider's right side
                     target_x = collider.position.x + delta_x
                     self.collider.position.x = target_x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
             elif isinstance(self.collider, CircleCollider) and isinstance(collider, RectCollider):
                 #Resolve the circle-rect collision
@@ -337,14 +351,14 @@ class Entity:
                     if self.collider.position.x < collider.position.x - delta_x:
                         continue
                     self.collider.position.x = collider.position.x - delta_x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
                 elif self.velocity.x < 0: #Set the left side of this collider to the other's right side
                     #If the circle already isn't colliding, move on
                     if self.collider.position.x > collider.position.x + collider.size.x + delta_x:
                         continue
                     self.collider.position.x = collider.position.x + collider.size.x + delta_x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
 
             elif isinstance(self.collider, CircleCollider) and isinstance(collider, CircleCollider):
@@ -357,16 +371,16 @@ class Entity:
                     if self.collider.position.x < collider.position.x - delta_x:
                         continue
                     self.collider.position.x = collider.position.x - delta_x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
                 elif (self.velocity.x < 0): #Set the left side of this collider to collider's right side
                     if self.collider.position.x > collider.position.x + delta_x:
                         continue
                     self.collider.position.x = collider.position.x + delta_x
-                    self.position.x = self.collider.position.x + collider_offset
+                    self.position.x = self.collider.position.x - collider_offset
                     has_collided = True
             self.collider.position = self.collider.position.corrected()
-            self.position = self.collider.position.corrected()
+            self.position = self.position.corrected()
 
         if has_collided:
             self.velocity.x = 0
@@ -374,7 +388,7 @@ class Entity:
         #Handle vertical collisions:
         self.position.y += self.velocity.y * delta #Update position y
         self.collider.position.y += self.velocity.y * delta #Update collider position y
-        collider_offset = self.position.y - self.collider.position.y
+        collider_offset = self.collider.position.y - self.position.y
 
         collisions = []
         if self.velocity.y != 0:
@@ -387,11 +401,11 @@ class Entity:
                 #Resolve the rect-rect collision
                 if (self.velocity.y > 0): #Set the right side of this collider to collider's left side
                     self.collider.position.y = collider.position.y - self.collider.size.y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
                 elif (self.velocity.y < 0): #Set the left side of this collider to collider's right side
                     self.collider.position.y = collider.position.y + collider.size.y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
             elif isinstance(self.collider, RectCollider) and isinstance(collider, CircleCollider):
                 #Resolve the rect-circle collision
@@ -412,14 +426,14 @@ class Entity:
                     if self.collider.position.y < target_y - self.collider.size.y:
                         continue
                     self.collider.position.y = target_y - self.collider.size.y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
                 elif (self.velocity.y < 0): #Set the left side of this collider to collider's right side
                     target_y = collider.position.y + delta_y
                     if self.collider.position.y > target_y:
                         continue
                     self.collider.position.y = target_y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
             elif isinstance(self.collider, CircleCollider) and isinstance(collider, RectCollider):
                 #Resolve the circle-rect collision
@@ -439,13 +453,13 @@ class Entity:
                     if self.collider.position.y < collider.position.y - delta_y:
                         continue
                     self.collider.position.y = collider.position.y - delta_y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
                 elif (self.velocity.y < 0): #Set the top side of this collider to collider's bottom side
                     if self.collider.position.y > collider.position.y + collider.size.y + delta_y:
                         continue
                     self.collider.position.y = collider.position.y + collider.size.y + delta_y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
             elif isinstance(self.collider, CircleCollider) and isinstance(collider, CircleCollider):
                 #Resolve the circle-circle collision
@@ -457,15 +471,15 @@ class Entity:
                     if self.collider.position.y < collider.position.y - delta_y:
                         continue
                     self.collider.position.y = collider.position.y - delta_y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
                 elif (self.velocity.y < 0): #Set the left side of this collider to collider's right side
                     if self.collider.position.y > collider.position.y + delta_y:
                         continue
                     self.collider.position.y = collider.position.y + delta_y
-                    self.position.y = self.collider.position.y + collider_offset
+                    self.position.y = self.collider.position.y - collider_offset
                     has_collided = True
             self.collider.position = self.collider.position.corrected()
-            self.position = self.collider.position.corrected()
+            self.position = self.position.corrected()
         if has_collided:
             self.velocity.y = 0
