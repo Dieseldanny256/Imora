@@ -1,6 +1,7 @@
 from pygame import Surface, Rect
 from typing import List, Dict, Set
 from vector import Vector2
+from camera import Camera
 import pygame, os
 
 class Tilemap:
@@ -59,6 +60,7 @@ class Tilemap:
         self.tiles : Dict[Vector2, int] = {}
         self.floor_chunks : Dict[Vector2,  Tilemap.Chunk] = {}
         self.wall_chunks : Dict[Vector2, Tilemap.Chunk] = {}
+        self.ceiling_chunks : Dict[Vector2, Tilemap.Chunk] = {}
         self.chunk_size = chunk_size
         self.tile_size = tile_size
 
@@ -160,7 +162,7 @@ class Tilemap:
         
         for x in range(chunk.width):
             tile_type = self.get_tile(Vector2(chunk_pos.x * self.chunk_size + x, chunk_pos.y))
-            if tile_type == -1:
+            if tile_type == -1 or not Tilemap.tile_types[tile_type].has_collision:
                 continue
             tile_surface : Surface = Surface(Tilemap.tile_types[tile_type].variations[0].get_size(), pygame.SRCALPHA).convert_alpha()
             surf_altered = False
@@ -261,18 +263,22 @@ class Tilemap:
                     else:
                         chunk.surface.blit(tile_surface, (x * self.tile_size, y * self.tile_size))
 
-    def draw(self, dest : Surface):
-        for x in range(-1, 4):
-            for y in range(-1, 4):
+    def draw(self, camera : Camera):
+        camera_tile = self.world_to_tile(Vector2(camera.x, camera.y))
+        camera_chunk_x = camera_tile.x // self.chunk_size
+        camera_chunk_y = camera_tile.y // self.chunk_size
+        for x in range(-1 + camera_chunk_x, 7 + camera_chunk_x):
+            for y in range(-1 + camera_chunk_y, 4 + camera_chunk_y):
                 tile_pos = Vector2(x * self.chunk_size, y * self.chunk_size)
                 chunk_pos = Vector2(x, y)
                 #Draw the floors
                 if chunk_pos not in self.floor_chunks:
                     continue
-                dest.blit(self.floor_chunks[chunk_pos].surface, self.tile_to_world(tile_pos + Vector2(0.5, 0.5)).to_tuple())
+                position = self.tile_to_world(tile_pos + Vector2(0.5, 0.5))
+                camera.add_to_unsorted(self.floor_chunks[chunk_pos].surface, position.x, position.y)
 
-        for x in range(-1, 4):
-            for y in range(-1, 4):
+        for x in range(-1 + camera_chunk_x, 7 + camera_chunk_x):
+            for y in range(-1 + camera_chunk_y, 4 + camera_chunk_y):
                 tile_pos = Vector2(x * self.chunk_size, y * self.chunk_size)
                 chunk_pos = Vector2(x, y)
                 #Draw the walls
@@ -282,4 +288,4 @@ class Tilemap:
                     chunk_surface = self.wall_chunks[Vector2(chunk_pos.x, tile_pos.y + row)].surface
                     draw_position = self.tile_to_world(tile_pos + Vector2(0, row))
                     draw_position.y -= (chunk_surface.get_height() - self.tile_size)
-                    dest.blit(chunk_surface, draw_position.to_tuple())
+                    camera.add_to_sorted(chunk_surface, draw_position.x, draw_position.y, chunk_surface.get_height())
