@@ -5,6 +5,9 @@ class Vector2:
         self.x = x
         self.y = y
     
+    def __neg__(self):
+        return Vector2(-self.x, -self.y)
+
     def __add__(self, obj : "Vector2"):
         return Vector2(self.x + obj.x, self.y + obj.y)
 
@@ -72,7 +75,10 @@ class Vector2:
     
         return corrected_vector
 
-    def VectorTo(origin : "Vector2", target : "Vector2", maginude = 1.0):
+    def dot(self, vector : "Vector2") -> float:
+        return self.x * vector.x + self.y * vector.y
+
+    def vector_to(origin : "Vector2", target : "Vector2", maginude = 1.0):
         return (target - origin).normalized() * maginude
 
     def truncate(self):
@@ -83,6 +89,13 @@ class Vector2:
 
     def from_tuple(tuple : tuple):
         return Vector2(tuple[0], tuple[1])
+    
+    def bounce(self, normal : "Vector2"):
+        if normal.dot(normal) == 0:
+            return self
+        u = (self.dot(normal) / normal.dot(normal)) * normal
+        w = self - u
+        return w - u
 
 class Vector2i:
     def __init__(self, x : int, y : int):

@@ -24,6 +24,10 @@ class Collider:
         Collider.colliders.add(collider)
         return collider
 
+    def remove(self):
+        if self in Collider.colliders.copy():
+            Collider.colliders.remove(self)
+
     def __init__(self, x : float = 0, y : float = 0, is_visible : bool = False, is_area = True, color : Color = (255, 0, 0)):
         self.position : Vector2 = Vector2(x, y)
         self.is_visible = is_visible
@@ -31,10 +35,6 @@ class Collider:
         self.is_colliding = False
         self.is_area = is_area
         self.parent : Entity = None
-
-    def __del__(self):
-        if self in Collider.colliders:
-            Collider.colliders.remove(self)
 
     def draw(self, camera : Camera):
         pass
@@ -275,16 +275,27 @@ class Entity:
     def __init__(self, x : float, y : float, collider : Collider):
         self.position : Vector2 = Vector2(x, y)
         self.collider : Collider = Collider.add(collider)
+        self.collider.parent = self
         self.collider.position += self.position
-        self.velocity : Vector2 = Vector2(x, y)
-        self.accel : Vector2 = Vector2(x, y)
+        self.velocity : Vector2 = Vector2(0, 0)
+        self.accel : Vector2 = Vector2(0, 0)
+        self.areas : Set[Collider] = set()
     
-    def physics_update(self, delta):
-        self.velocity += self.velocity * delta
+    def physics_update(self, delta : float, tilemap : Tilemap):
+        self.velocity += self.accel * delta
+        self.move_and_collide(delta, tilemap)
+
+    def _on_area_entered(self, area : Collider):
+        print("entered")
+
+    def _on_area_exited(self, area : Collider):
+        print("exited")
 
     def move_and_collide(self, delta : float, tilemap : Tilemap):
         '''Moves this entity according to its velocity and acceleration vectors, modifying them
         as appropriate to resolve collisions.'''
+
+        collided_areas = set()
 
         #Handle horizontal collisions:
         self.position.x += self.velocity.x * delta #Update position x
@@ -292,12 +303,18 @@ class Entity:
         collider_offset = self.collider.position.x - self.position.x
 
         collisions : List[Collider] = []
-        if self.velocity.x != 0:
-            collisions = self.collider.get_body_collisions()
-            collisions += self.collider.get_tile_collisions(tilemap)
+        collisions = self.collider.get_collisions()
+        collisions += self.collider.get_tile_collisions(tilemap)
 
         has_collided = False
         for collider in collisions:
+            if collider.is_area:
+                collider.is_colliding = True
+                collided_areas.add(collider)
+                if collider not in self.areas:
+                    self.areas.add(collider)
+                    self._on_area_entered(collider)
+                continue
             if isinstance(self.collider, RectCollider) and isinstance(collider, RectCollider):
                 #Resolve the rect-rect collision
                 if (self.velocity.x > 0): #Set the right side of this collider to collider's left side
@@ -381,7 +398,6 @@ class Entity:
                     has_collided = True
             self.collider.position = self.collider.position.corrected()
             self.position = self.position.corrected()
-
         if has_collided:
             self.velocity.x = 0
 
@@ -391,12 +407,18 @@ class Entity:
         collider_offset = self.collider.position.y - self.position.y
 
         collisions = []
-        if self.velocity.y != 0:
-            collisions = self.collider.get_body_collisions()
-            collisions += self.collider.get_tile_collisions(tilemap)
+        collisions = self.collider.get_collisions()
+        collisions += self.collider.get_tile_collisions(tilemap)
 
         has_collided = False
         for collider in collisions:
+            if collider.is_area:
+                collider.is_colliding = True
+                collided_areas.add(collider)
+                if collider not in self.areas:
+                    self.areas.add(collider)
+                    self._on_area_entered(collider)
+                continue
             if isinstance(self.collider, RectCollider) and isinstance(collider, RectCollider):
                 #Resolve the rect-rect collision
                 if (self.velocity.y > 0): #Set the right side of this collider to collider's left side
@@ -483,3 +505,8 @@ class Entity:
             self.position = self.position.corrected()
         if has_collided:
             self.velocity.y = 0
+        
+        for collider in self.areas.copy():
+            if collider not in collided_areas:
+                self.areas.remove(collider)
+                self._on_area_exited(collider)

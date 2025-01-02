@@ -4,6 +4,7 @@ from entity import Collider, RectCollider, CircleCollider, Entity
 from vector import Vector2
 from sprite import Sprite
 from camera import Camera
+from projectiles import Projectile, BouncyProjectile
 
 pygame.init()
 
@@ -19,9 +20,8 @@ class Main:
         self.previous_time : float = time.time()
         self.delta : float
 
-        self.collider : CircleCollider = Collider.add(CircleCollider(100, 100, 50, True, False))
-        self.collider2 : CircleCollider = Collider.add(CircleCollider(100, 50, 50, True, False, pygame.Color(0, 0, 255, 200)))
-        self.entity : Entity = Entity(50, 50, RectCollider(8, 24, 16, 8, True, False, pygame.Color(200, 0, 200, 200)))
+        self.collider : CircleCollider = Collider.add(CircleCollider(100, 100, 50, True, False, color=pygame.Color(255, 0, 0, 200)))
+        self.entity : Entity = Entity(50, 50, RectCollider(8, 24, 16, 8, False, False))
         self.sprite : Sprite = Sprite(0, 0, 48, pygame.image.load("Images/KarenTieflingStill.png"))
         self.walking : bool = False
         self.tilemap : Tilemap = Tilemap()
@@ -47,7 +47,9 @@ class Main:
         """Runs once every frame and returns False when it should exit the program"""
         self.delta = time.time() - self.previous_time
         self.previous_time = time.time()
-        #print(1/self.delta)
+        if 1/self.delta < 40:
+            print(1/self.delta)
+            print(len(Projectile.projectiles))
 
         movement_updated = False
 
@@ -61,6 +63,8 @@ class Main:
                 if event.button == 1:
                     self.mouse_down = False
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    self.entity.velocity = Vector2.vector_to(self.entity.position, self.camera.screen_to_world(Vector2.from_tuple(pygame.mouse.get_pos())), 35 * 16)
                 if event.key == pygame.K_w:
                     self.movement.y -= 1
                     movement_updated = True
@@ -97,20 +101,33 @@ class Main:
                 self.walking = True
                 self.sprite.play("KarenWalk")
 
-        self.entity.velocity = self.movement.normalized() * 10 * 16
-        self.entity.move_and_collide(self.delta, self.tilemap)
+        Projectile.update_projectiles(self.delta, self.tilemap, True, self.camera)
+        movement_dir = self.movement.normalized()
+        #If the player is attempting to accelerate beyond the max velocity of 10 tiles/s
+        if (movement_dir.x != 0 or movement_dir.y != 0) and self.entity.velocity.length() > 10 * 16:
+            #Set their acceleration to be the dot product of the opposite of their velocity, 
+            #normalized between 0 and 1, times their ordinary acceleration
+            #This has the effect of reducing the acceleration the more in line it is with their velocity
+            self.entity.accel = (movement_dir.dot(-self.entity.velocity.normalized()) * 0.5 + 0.5) * movement_dir * 80 * 16
+        else:
+            self.entity.accel = movement_dir * 80 * 16
+        self.entity.physics_update(self.delta, self.tilemap)
+        if self.entity.velocity.length() > 30 * 16 * self.delta:
+            self.entity.velocity -= self.entity.velocity.normalized() * 40 * 16 * self.delta
+        else:
+            self.entity.velocity = Vector2(0, 0)
         self.sprite.position = self.entity.position + Vector2(0, -16)
         self.camera.set_position(self.entity.position - (Vector2.from_tuple(self.screen.get_size()) * 0.5) + Vector2(16, 16))
-
+        
         if (self.mouse_down):
             world_pos = self.camera.screen_to_world(Vector2.from_tuple(pygame.mouse.get_pos()))
-            self.tilemap.set_tile(self.tilemap.world_to_tile(world_pos), 3)
+            BouncyProjectile.spawn_projectile(world_pos.x, world_pos.y, 10, Vector2.vector_to(self.entity.position + Vector2(16, 24), world_pos, 30 * 16), bounciness=1.0)
+            pass
 
         # Draw graphics
         self.screen.fill((0, 255, 0))
         self.tilemap.draw(self.camera)
         self.collider.draw(self.camera)
-        self.collider2.draw(self.camera)
         self.sprite.draw(self.camera, self.delta)
         self.entity.collider.draw(self.camera)
         
