@@ -90,7 +90,7 @@ class Collider:
                 if self.collide_circle(collider):    
                     collisions.append(collider)
         return collisions
-    
+
     def get_tile_collisions(self, tilemap : Tilemap) -> List["Collider"]:
         pass
 
@@ -286,10 +286,12 @@ class Entity:
         self.move_and_collide(delta, tilemap)
 
     def _on_area_entered(self, area : Collider):
-        print("entered")
+        #print("entered")
+        pass
 
     def _on_area_exited(self, area : Collider):
-        print("exited")
+        #print("exited")
+        pass
 
     def move_and_collide(self, delta : float, tilemap : Tilemap):
         '''Moves this entity according to its velocity and acceleration vectors, modifying them

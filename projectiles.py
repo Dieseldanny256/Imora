@@ -1,6 +1,6 @@
 from entity import Collider, CircleCollider, RectCollider, Entity
 from vector import Vector2
-from typing import Set
+from typing import Set, List
 from pygame import Color
 from camera import Camera
 from tilemap import Tilemap
@@ -45,6 +45,21 @@ class Projectile:
         Collider.remove(self.collider)
         self.dead = True
 
+    def get_projectile_collisions(self) -> List[Collider]:
+        collisions = []
+        for collider in Collider.colliders:
+            if collider == self:
+                continue #Don't return self-collisions
+            if collider.parent != None and isinstance(collider.parent, Projectile):
+                continue #No need to collide with other projectiles
+            if isinstance(collider, RectCollider):
+                if self.collider.collide_rect(collider):    
+                    collisions.append(collider)
+            else:
+                if self.collider.collide_circle(collider):    
+                    collisions.append(collider)
+        return collisions
+
     def physics_update(self, delta : float, tilemap : Tilemap):
         '''Moves this projectile according to it's velocity and acceleration. On a collision with a body,
         the _on_projectile_collision() method is called. On a collision with an area, the _on_area_entered() 
@@ -57,7 +72,7 @@ class Projectile:
         self.collider.position = self.position
         collided_areas = set()
 
-        collisions = self.collider.get_collisions() + self.collider.get_tile_collisions(tilemap)
+        collisions = self.get_projectile_collisions() + self.collider.get_tile_collisions(tilemap)
         for collider in collisions:
             if collider.is_area:
                 collided_areas.add(collider)
@@ -111,7 +126,7 @@ class BouncyProjectile (Projectile):
         collided_areas = set()
 
         #Handle x axis
-        collisions = self.collider.get_collisions() + self.collider.get_tile_collisions(tilemap)
+        collisions = self.get_projectile_collisions() + self.collider.get_tile_collisions(tilemap)
         for collider in collisions:
             if collider.is_area:
                 collided_areas.add(collider)
@@ -120,6 +135,7 @@ class BouncyProjectile (Projectile):
                     self._on_area_entered(collider)
                     self.areas.add(collider)
             else:
+                normal = Vector2(0, 0)
                 if isinstance(collider, RectCollider):
                     if self.last_velocity.x < 0:
                         normal = Vector2(collider.position.x + collider.size.x - self.collider.position.x + self.collider.size, 0)
@@ -133,7 +149,7 @@ class BouncyProjectile (Projectile):
         self.position.y += self.velocity.y * delta
         self.collider.position.y = self.position.y
 
-        collisions = self.collider.get_collisions() + self.collider.get_tile_collisions(tilemap)
+        collisions = self.get_projectile_collisions() + self.collider.get_tile_collisions(tilemap)
         for collider in collisions:
             if collider.is_area:
                 collided_areas.add(collider)
@@ -142,6 +158,7 @@ class BouncyProjectile (Projectile):
                     self._on_area_entered(collider)
                     self.areas.add(collider)
             else:
+                normal = Vector2(0, 0)
                 if isinstance(collider, RectCollider):
                     if self.last_velocity.y < 0:
                         normal = Vector2(0, collider.position.y + collider.size.y - self.collider.position.y + self.collider.size)

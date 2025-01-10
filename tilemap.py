@@ -2,7 +2,7 @@ from pygame import Surface, Rect
 from typing import List, Dict, Set
 from vector import Vector2
 from camera import Camera
-import pygame, os
+import pygame, os, json
 
 class Tilemap:
     TILE_BITMAPS : Dict[int, int] = {
@@ -35,6 +35,24 @@ class Tilemap:
                 variations.append(variation)
         return variations
     
+    def get_tile_icon(id : int) -> Surface:
+        if id not in Tilemap.tile_types:
+            return
+        tile_type = Tilemap.tile_types[id]
+        tile_size = tile_type.variations[0].get_size()
+        icon = Surface(tile_size, pygame.SRCALPHA).convert_alpha()
+
+        #Topleft corner
+        icon.blit(tile_type.variations[Tilemap.TILE_BITMAPS[0x8]], (-tile_size[0] // 2, -tile_size[0] // 2))
+        #Topright corner
+        icon.blit(tile_type.variations[Tilemap.TILE_BITMAPS[0x4]], (tile_size[0] // 2, -tile_size[0] // 2))
+        #Bottomleft corner
+        icon.blit(tile_type.variations[Tilemap.TILE_BITMAPS[0x2]], (-tile_size[0] // 2, tile_size[0] // 2))
+        #Bottomright corner
+        icon.blit(tile_type.variations[Tilemap.TILE_BITMAPS[0x1]], (tile_size[0] // 2, tile_size[0] // 2))
+
+        return icon
+
     class Chunk:
         def __init__(self, width : int, height : int, tile_width : int, tile_height : int):
             self.surface : Surface = Surface((width * tile_width, height * tile_height), pygame.SRCALPHA).convert_alpha()
@@ -92,8 +110,13 @@ class Tilemap:
     def set_tile(self, tile_pos : Vector2, id : int):
         '''Sets the tile at the given tile position to the new tile type indicated by id, use -1 to remove tiles.'''
         #Set the tile
-        self.tiles[tile_pos] = id
-        tile_type = Tilemap.tile_types[id]
+        tile_type = None
+        if id != -1:
+            self.tiles[tile_pos] = id
+            tile_type = Tilemap.tile_types[id]
+        else:
+            if tile_pos in self.tiles:
+                self.tiles.pop(tile_pos)
 
         chunks : Set[Vector2] = set()
 
@@ -289,3 +312,46 @@ class Tilemap:
                     draw_position = self.tile_to_world(tile_pos + Vector2(0, row))
                     draw_position.y -= (chunk_surface.get_height() - self.tile_size)
                     camera.add_to_sorted(chunk_surface, draw_position.x, draw_position.y, chunk_surface.get_height())
+
+    def save(self, filename : str):
+        file = open(filename, "w")
+        tiles_array = []
+        #Convert to JSON friendly format
+        for tile in self.tiles:
+            key_pair = {"key" : tile.to_tuple(), "value" : Tilemap.tile_types[self.tiles[tile]].name}
+            tiles_array.append(key_pair)
+        json.dump(tiles_array, file)
+        file.close()
+
+    def find_tile_id_with_name(name : str) -> int:
+        '''Gets the tile id with the given name, if that tile name is not found, returns an
+        id of -1.'''
+        for tile_id in Tilemap.tile_types:
+            if Tilemap.tile_types[tile_id].name == name:
+                return tile_id
+        return -1
+
+    def load(self, filename : str) -> bool:
+        try:
+            file = open(filename, "r")
+        except:
+            print("There is no file with path " + filename)
+            return False
+        tiles_array = json.load(file)
+        #Load self.tiles with the tiles from the JSON
+        self.tiles.clear()
+        self.wall_chunks.clear()
+        self.floor_chunks.clear()
+        for key_pair in tiles_array:
+            tile_pos = Vector2(key_pair["key"][0], key_pair["key"][1])
+            tile = Tilemap.find_tile_id_with_name(key_pair["value"])
+            if tile == -1:
+                print("WARNING: Tile type " + key_pair["value"] + " not found! Did you rename or delete it?")
+            self.set_tile(tile_pos, tile)
+        file.close()
+        return True
+    
+    def clear(self):
+        self.tiles.clear()
+        self.wall_chunks.clear()
+        self.floor_chunks.clear()

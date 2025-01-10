@@ -4,29 +4,40 @@ from typing import Dict, List
 from camera import Camera
 
 class Animation:
-    def load_animation(path : str, frame_width : int, frame_height : int, frame_count : int):
+    animations : Dict[str, "Animation"] = {}
+
+    def load_animation(name : str, path : str, frame_width : int, frame_height : int, frame_count : int, framerate : float = 12.0, is_looping = True) -> "Animation":
         frames : List[Surface] = []
+
+        if name in Animation.animations:
+            print(name + " is already an animation!")
+            return None
+
         try:
             atlas : Surface = image.load(path).convert_alpha()
         except:
             print("Err loading animation atlas from path: " + path)
             return None
         
-        counter = 0
+        counter = 1
         for y in range(atlas.get_height() // frame_height):
             for x in range(atlas.get_width() // frame_width):
                 if counter > frame_count:
-                    return frames
+                    animation = Animation(frames, frame_width, frame_height, frame_count, framerate, is_looping)
+                    Animation.animations[name] = animation
+                    return animation
                 frame = Surface((frame_width, frame_height), SRCALPHA).convert_alpha()
                 frame.blit(atlas, (0, 0), (x * frame_width, y * frame_height, frame_width, frame_height))
                 frames.append(frame)
                 counter += 1
-        return frames
+        animation = Animation(frames, frame_width, frame_height, frame_count, framerate, is_looping)
+        Animation.animations[name] = animation
+        return animation
 
-    def __init__(self, atlas_path : str, frame_width : int, frame_height : int, frame_count : int, framerate = 12.0, is_looping = True):
-        self.frames : List[Surface] = Animation.load_animation(atlas_path, frame_width, frame_height, frame_count)
+    def __init__(self, frames : List[Surface], frame_width : int, frame_height : int, frame_count : int, framerate = 12.0, is_looping = True):
+        self.frames = frames
         self.framerate = framerate
-        self.frame_count = 0
+        self.frame_count = frame_count
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.is_looping = is_looping
@@ -34,8 +45,6 @@ class Animation:
             self.frame_count = len(self.frames)
 
 class Sprite:
-    animations : Dict[str, Animation] = {}
-
     def __init__(self, x : float, y : float, y_offset : float, surface : Surface = None):
         self.surface = surface
         self.position = Vector2(x, y)
@@ -47,20 +56,17 @@ class Sprite:
         self.timer = 0.0
     
     def add_animation(self, name : str, atlas_path : str, frame_width : int, frame_height : int, frame_count : int, framerate = 12.0, is_looping = True):
-        if name in Sprite.animations:
-            print(name + " is already an animation!")
-            return
-        Sprite.animations[name] = (Animation(atlas_path, frame_width, frame_height, frame_count, framerate, is_looping))
+        Animation.load_animation(name, atlas_path, frame_width, frame_height, frame_count, framerate, is_looping)
 
     def play(self, name : str = ""):
         if name == "":
             self.is_playing = True
             return
-        if name not in Sprite.animations:
+        if name not in Animation.animations:
             self.is_playing = False
             print("Animation " + name + " does not exist!")
             return
-        self.animation = Sprite.animations[name]
+        self.animation = Animation.animations[name]
         self.frame = 0
         self.is_playing = True
 

@@ -22,6 +22,9 @@ class Camera:
     def screen_to_world(self, vector : Vector2):
         return vector + Vector2(self.x, self.y)
 
+    def world_to_screen(self, vector : Vector2):
+        return vector - Vector2(self.x, self.y)
+
     def set_position(self, new_position : Vector2):
         self.x = math.floor(new_position.x)
         self.y = math.floor(new_position.y)

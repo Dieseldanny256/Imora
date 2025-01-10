@@ -45,7 +45,7 @@ class Main:
 
     def update(self) -> bool:
         """Runs once every frame and returns False when it should exit the program"""
-        self.delta = time.time() - self.previous_time
+        self.delta = min(time.time() - self.previous_time, 0.5)
         self.previous_time = time.time()
         if 1/self.delta < 40:
             print(1/self.delta)
@@ -121,7 +121,7 @@ class Main:
         
         if (self.mouse_down):
             world_pos = self.camera.screen_to_world(Vector2.from_tuple(pygame.mouse.get_pos()))
-            BouncyProjectile.spawn_projectile(world_pos.x, world_pos.y, 10, Vector2.vector_to(self.entity.position + Vector2(16, 24), world_pos, 30 * 16), bounciness=1.0)
+            BouncyProjectile.spawn_projectile(world_pos.x, world_pos.y, 10, Vector2.vector_to(self.entity.position + Vector2(16, 24), world_pos, 30 * 16), lifetime=2.0, bounciness=1.0)
             pass
 
         # Draw graphics
